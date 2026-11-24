@@ -84,7 +84,13 @@ const PAGE_SCRIPTS = [
     entry: 'content-scripts/vacancy-list.js',
     extras: ['content-scripts/search-tracker.js'],
   },
-  { pattern: QUESTIONNAIRE_URL_PATTERN, entry: 'content-scripts/vacancy-questionnaire.js', extras: [] },
+  {
+    pattern: QUESTIONNAIRE_URL_PATTERN,
+    entry: 'content-scripts/vacancy-questionnaire.js',
+    extras: [],
+    // the entry runs once per document, a later questionnaire in the same document is started by this message
+    enteredMessage: 'HHAA_QUESTIONNAIRE_ENTERED',
+  },
   { pattern: CHAT_URL_PATTERN, entry: 'content-scripts/chat-tools.js', extras: [] },
 ];
 
@@ -349,6 +355,9 @@ async function injectForNavigation({ tabId, url, documentId }, source) {
     await addNavigationLogEntry({ at: Date.now(), ...base, injectedFile: file, injectionError });
     if (injectionError) {
       await reportInjectionFailure(tabId, file, url, injectionError, { isEntry: file === page.entry });
+    } else if (file === page.entry && page.enteredMessage) {
+      // nobody listening (the document has just left) is not a failure
+      await chrome.tabs.sendMessage(tabId, { type: page.enteredMessage }, { documentId }).catch(() => {});
     }
   }
 }

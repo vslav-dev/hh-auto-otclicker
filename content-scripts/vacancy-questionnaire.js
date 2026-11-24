@@ -32,11 +32,21 @@ const LETTER_TEXTAREA_SELECTOR = '[data-qa="vacancy-response-popup-form-letter-i
 // cover letter — it only reveals that via this validation error after a rejected submit
 const LETTER_REQUIRED_ERROR_SELECTOR = '[data-qa="letter-required"]';
 const SUBMIT_SELECTOR = '[data-qa="vacancy-response-submit-popup"]';
+const SUBMIT_ENABLE_TIMEOUT_MS = 1500;
 const SKIP_BUTTON_ID = 'hhaa-skip-vacancy-btn';
 const FILL_BAR_ID = 'hhaa-manual-fill-bar';
 const OPEN_OPTION_VALUE = 'open';
 
 const trace = (message, context) => addTraceEntry('questionnaire', message, context);
+
+// what the form looks like when its submit button won't enable: the cause is not known, so the log has to show it
+function describeFormState() {
+  const fields = Array.from(document.querySelectorAll('textarea, input[type="text"]'));
+  const empty = fields.filter((field) => !field.value.trim()).length;
+  const warning = document.querySelector('[data-qa="hidden-resume-warning"]');
+  const warningText = warning ? warning.textContent.replace(/\s+/g, ' ').trim().slice(0, 120) : 'none';
+  return `fields=${fields.length} empty=${empty} resumeWarningVisible=${isVisible(warning)} resumeWarning="${warningText}"`;
+}
 
 async function clickSubmit() {
   const submitButton = document.querySelector(SUBMIT_SELECTOR);
@@ -270,6 +280,7 @@ const SKIP_REASON_RESULTS = {
   stop_word: 'skipped_stop_word',
   manual_skip: 'skipped_manual',
   cover_letter_required: 'skipped_cover_letter_required',
+  submit_blocked: 'skipped_submit_blocked',
 };
 
 async function skipQuestionnaire({ vacancyId, title, company, listUrl, reason }) {
@@ -458,6 +469,21 @@ async function run() {
       await fillCoverLetter(settings.coverLetterText);
     }
 
+    // a button that stays disabled after everything is filled can't be pressed, and "disabled" must not be
+    // mistaken below for the page having taken the submit
+    const submitEnabled = await waitFor(() => !document.querySelector(SUBMIT_SELECTOR)?.disabled, {
+      timeout: SUBMIT_ENABLE_TIMEOUT_MS,
+    });
+    if (!submitEnabled) {
+      await reportWarning(
+        'questionnaire',
+        'submit button still disabled after filling, skipping',
+        `vacancyId=${vacancyId} url=${location.href} ${describeFormState()}`,
+      );
+      await skipQuestionnaire({ vacancyId, title, company, listUrl, reason: 'submit_blocked' });
+      return;
+    }
+
     if (settings.mode === 'assisted' && answerRecords.length > 0) {
       await trace('assisted mode: filled, waiting for human approval', `vacancyId=${vacancyId}`);
       // registers the listeners synchronously before the sidepanel could possibly show its
@@ -574,8 +600,26 @@ onContextInvalidated(() => {
   // nothing can be written to the log from a dead context, and a warn here would sit on the Errors page
   console.log('📝 [questionnaire] extension was reloaded/updated — reload this page to restore the bot');
 });
+// A module runs once per document, but hh.ru's pushState lets one document show several questionnaires one
+// after another (the run stopped on one, the person went back to the list, started again, and the next
+// response opened a questionnaire in the same document) — the later ones would find no script to start.
+// So the worker tells the module about every arrival, and a questionnaire still being handled ignores it.
+let isHandlingPage = false;
+
+function handlePage() {
+  if (isHandlingPage) return;
+  isHandlingPage = true;
+  setupManualSkipButton();
+  setupManualFillButton();
+  run().finally(() => {
+    isHandlingPage = false;
+  });
+}
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'HHAA_QUESTIONNAIRE_ENTERED') handlePage();
+});
+
 installUncaughtErrorCapture('questionnaire');
 startPageWatchers('questionnaire');
-setupManualSkipButton();
-setupManualFillButton();
-run();
+handlePage();

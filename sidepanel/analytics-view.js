@@ -45,7 +45,8 @@ function computeStats(log) {
       entry.result === 'skipped_popup' ||
       entry.result === 'skipped_assisted' ||
       entry.result === 'skipped_stop_word' ||
-      entry.result === 'skipped_manual'
+      entry.result === 'skipped_manual' ||
+      entry.result === 'skipped_submit_blocked'
     ) {
       stats.skippedQuestionnaire += 1;
     } else if (entry.result === 'error') {

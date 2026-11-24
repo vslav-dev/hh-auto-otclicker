@@ -11,6 +11,7 @@ const RESULT_META = {
   skipped_stop_word: { icon: '⏭', label: 'Анкета пропущена — стоп-слово' },
   skipped_manual: { icon: '⏭', label: 'Пропущено вручную на странице' },
   skipped_cover_letter_required: { icon: '⏭', label: 'Анкета пропущена — нужно сопроводительное письмо' },
+  skipped_submit_blocked: { icon: '⏭', label: 'Анкета пропущена — кнопка отправки заблокирована' },
   uncertain_navigated_away: { icon: '❔', label: 'Неясно — клик увёл со списка' },
   error: { icon: '⚠️', label: 'Ошибка' },
 };
