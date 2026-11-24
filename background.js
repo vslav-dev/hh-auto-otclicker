@@ -17,6 +17,7 @@ import {
 import { reportError, reportWarning, stackOf, installUncaughtErrorCapture } from './lib/diagnostics.js';
 import { addCaptchaPicture } from './lib/captcha-store.js';
 import { uploadNow } from './lib/uploader.js';
+import { installCaptchaNetProbe } from './lib/captcha-net-probe.js';
 import { reactionDelayMs } from './lib/pacing.js';
 import {
   LIST_URL_PATTERN,
@@ -293,6 +294,20 @@ async function injectModule(tabId, file, documentId) {
   }
 }
 
+// TEMPORARY (24.11.2026, see lib/captcha-net-probe.js): the page's own requests around a captcha, recorded in its
+// MAIN world. Once per document (the probe guards itself); a failure only costs this debugging data.
+async function injectCaptchaNetProbe(tabId, documentId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, documentIds: [documentId] },
+      world: 'MAIN',
+      func: installCaptchaNetProbe,
+    });
+  } catch (error) {
+    await addTraceEntry('background', 'captcha net probe not injected', `tabId=${tabId} error=${error.message}`);
+  }
+}
+
 // hh.ru is a SPA: the "Откликнуться" click can be a pushState navigation with no document
 // reload, which static manifest content_scripts never re-run for. Inject programmatically on
 // every real and history-API navigation instead, so the right script always runs.
@@ -345,6 +360,8 @@ async function injectForNavigation({ tabId, url, documentId }, source) {
     await recoverStrayTab(tabId, url);
     return;
   }
+
+  await injectCaptchaNetProbe(tabId, documentId);
 
   // the entry goes first, and each file is logged on its own
   for (const file of [page.entry, ...page.extras]) {
